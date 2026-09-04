@@ -64,6 +64,7 @@ typedef long (*pfn_snd_pcm_writei)(snd_pcm_t*, const void*, unsigned long);
 typedef int (*pfn_snd_pcm_prepare)(snd_pcm_t*);
 typedef int (*pfn_snd_pcm_drop)(snd_pcm_t*);
 typedef int (*pfn_snd_pcm_close)(snd_pcm_t*);
+typedef const char* (*pfn_snd_strerror)(int);
 
 struct Libs {
     void *avformat, *avcodec, *avutil, *swscale, *swresample, *alsa;
@@ -373,7 +374,6 @@ struct DecodeCtx {
     AVFrame* frame;
     AVPacket* pkt;
     SwsContext* sws;
-    SwsContext* sws;
     int swsSrcFormat;  // sws 按该输入像素格式建立
     int swsSrcW;
     SwrContext* swr;
@@ -387,7 +387,6 @@ struct DecodeCtx {
                   frame(NULL), pkt(NULL), sws(NULL), swsSrcFormat(-1), swsSrcW(0), swr(NULL),
                   swrInFormat(-1), swrInRate(0), swrInLayout(0), swrOutRate(0) {
         vTimeBase.num = 0; vTimeBase.den = 0;
-        aTimeBase.num = 0; aTimeBase.den = 0;
     }
 };
 
@@ -417,8 +416,8 @@ static bool ensureSwr(DecodeCtx& d, AVFrame* frame, int ratePermillage) {
     if (inLayout == 0) inLayout = frame->channels == 1 ? 1 : 3;  // MONO / STEREO
     const int outRate = (int)((double)frame->sample_rate * ((double)ratePermillage / 1000.0) + 0.5);
     d.swr = g_libs.swr_alloc_set_opts_(NULL,
-                                       3 /*stereo*/, AV_SAMPLE_FMT_S16, outRate,
-                                       (int64_t)inLayout, frame->format, frame->sample_rate,
+                                       3 /*stereo*/, (AVSampleFormat)AV_SAMPLE_FMT_S16, outRate,
+                                       (int64_t)inLayout, (AVSampleFormat)frame->format, frame->sample_rate,
                                        0, NULL);
     if (!d.swr) return false;
     if (g_libs.swr_init_(d.swr) < 0) { g_libs.swr_free_(&d.swr); d.swr = NULL; return false; }
