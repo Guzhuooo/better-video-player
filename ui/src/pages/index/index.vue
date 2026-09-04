@@ -5,19 +5,19 @@
       <div class="findbtn press" @click="goFiles"><text class="findtext">＋ 找视频</text></div>
     </div>
 
-    <!-- 继续播放 -->
-    <div class="resume press" v-if="resume" @click="playPath(resume.path, resume.name)">
-      <div class="glyphbox"><text class="glyphtext">▶</text></div>
-      <div class="resumemain">
-        <text class="resumetitle">{{ resume.name }}</text>
-        <text class="resumemeta">上次看到 {{ fmt.formatTime(resume.positionMs) }} · {{ pct(resume) }}%</text>
-      </div>
-      <text class="chev">〉</text>
-    </div>
-
-    <!-- 历史 -->
-    <text class="sectitle" v-if="historyList.length > 0">播放历史</text>
     <scroller class="list" show-scrollbar="false">
+      <!-- 继续播放 -->
+      <div class="resume press" v-if="resume" @click="playPath(resume.path, resume.name)">
+        <div class="glyphbox"><text class="glyphtext">▶</text></div>
+        <div class="resumemain">
+          <text class="resumetitle">{{ resume.name }}</text>
+          <text class="resumemeta">上次看到 {{ fmt.formatTime(resume.positionMs) }} · {{ pct(resume) }}%</text>
+        </div>
+        <text class="chev">〉</text>
+      </div>
+
+      <!-- 历史 -->
+      <text class="sectitle" v-if="historyList.length > 0">播放历史</text>
       <div v-for="(it, i) in historyList" :key="it.path" class="row press" @click="playPath(it.path, it.name)">
         <div class="glyphbox small"><text class="glyphtextdim">{{ i + 1 }}</text></div>
         <div class="rowmain">
@@ -26,7 +26,7 @@
         </div>
         <text class="chev">〉</text>
       </div>
-      <div class="listpad" v-if="historyList.length === 0 && !resume">
+      <div class="emptywrap" v-if="historyList.length === 0 && !resume">
         <text class="emptytip">还没有播放记录。点右上角「找视频」，看看笔里有什么能看的。</text>
       </div>
       <div class="listpad"></div>
@@ -86,10 +86,14 @@ export default {
   background-color: #0b0f14;
 }
 .header {
+  position: absolute;
+  left: 0vw;
+  top: 0vh;
+  width: 100vw;
+  height: 13vh;
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: 15vh;
   padding: 0 2vw;
   border-bottom-width: 1px;
   border-bottom-color: #263340;
@@ -107,6 +111,13 @@ export default {
 .findtext {
   color: #4fd6c3;
   font-size: 4.6vh;
+}
+.list {
+  position: absolute;
+  left: 0vw;
+  top: 13.5vh;
+  width: 100vw;
+  height: 85.5vh;
 }
 .resume {
   display: flex;
@@ -160,10 +171,6 @@ export default {
   font-size: 4vh;
   margin: 1.5vh 2vw 0;
 }
-.list {
-  flex: 1;
-  margin-top: 0.5vh;
-}
 .row {
   display: flex;
   flex-direction: row;
@@ -189,10 +196,12 @@ export default {
 .listpad {
   height: 4vh;
 }
+.emptywrap {
+  padding: 6vh 4vw;
+}
 .emptytip {
   color: #8ca0ad;
   font-size: 4.2vh;
-  margin: 6vh 4vw;
   line-height: 6.5vh;
 }
 </style>

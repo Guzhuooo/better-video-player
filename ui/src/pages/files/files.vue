@@ -7,7 +7,7 @@
     </div>
 
     <scroller class="list" show-scrollbar="false">
-      <div class="listpad" v-if="!scanning && folders.length === 0 && videos.length === 0">
+      <div class="emptywrap" v-if="!scanning && folders.length === 0 && videos.length === 0">
         <text class="emptytip">这里没有视频文件。去别的文件夹看看，或把 mp4/mkv 复制进笔里。</text>
       </div>
       <div v-for="f in folders" :key="'d' + f.key" class="row press" @click="enter(f.path)">
@@ -116,10 +116,14 @@ export default {
   background-color: #0b0f14;
 }
 .topbar {
+  position: absolute;
+  left: 0vw;
+  top: 0vh;
+  width: 100vw;
+  height: 13vh;
   display: flex;
   flex-direction: row;
   align-items: center;
-  height: 13vh;
   padding: 0 2vw;
   border-bottom-width: 1px;
   border-bottom-color: #263340;
@@ -139,7 +143,11 @@ export default {
   text-overflow: ellipsis;
 }
 .list {
-  flex: 1;
+  position: absolute;
+  left: 0vw;
+  top: 13.5vh;
+  width: 100vw;
+  height: 85.5vh;
 }
 .row {
   display: flex;
@@ -192,10 +200,12 @@ export default {
 .listpad {
   height: 4vh;
 }
+.emptywrap {
+  padding: 6vh 4vw;
+}
 .emptytip {
   color: #8ca0ad;
   font-size: 4.2vh;
-  margin: 6vh 4vw;
   line-height: 6.5vh;
 }
 </style>
