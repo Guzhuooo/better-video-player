@@ -1,7 +1,11 @@
 <template>
   <div class="screen">
     <!-- 视频区：原生模块按 (0,0,800,192) 直写屏幕，这里只放透明点击层 -->
-    <div class="videoarea" @click="togglePlay"></div>
+    <div class="videoarea" @click="togglePlay">
+      <div class="errbox" v-if="errorText">
+        <text class="errtext">{{ errorText }}</text>
+      </div>
+    </div>
 
     <!-- 控制条（视频区之外，避免被视频帧覆盖） -->
     <div class="controls">
@@ -17,6 +21,7 @@
         <div class="btn press" @click="seekBy(-30)"><text class="btntext">-30s</text></div>
         <div class="btn press" @click="seekBy(30)"><text class="btntext">+30s</text></div>
         <div class="btn accent press" @click="cycleRate"><text class="btntextacc">{{ rateLabel }}</text></div>
+        <text class="qtag" v-if="qualityLabel">{{ qualityLabel }}</text>
         <div class="volbox">
           <text class="volicon">音</text>
           <slider class="volbar" :min="0" :max="100" :step="5" v-model="volume"
@@ -55,7 +60,8 @@ export default {
       rate: 1,
       volume: 70,
       screen: { w: 800, h: 254 },
-      qualityLabel: ''
+      qualityLabel: '',
+      errorText: ''
     }
   },
   computed: {
@@ -87,9 +93,11 @@ export default {
       })
       if (!r || !r.ok) {
         this.playing = false
+        this.errorText = '无法播放\n' + ((r && r.error) || '未知错误')
         this.toast('无法播放：' + ((r && r.error) || '未知错误'), 3200)
         return
       }
+      this.errorText = ''
       this.playing = true
       this.ended = false
       if (r.durationMs > 0) this.durationMs = r.durationMs
@@ -278,6 +286,23 @@ export default {
 .btntext {
   color: #e8eef2;
   font-size: 4.4vh;
+}
+.qtag {
+  color: #8ca0ad;
+  font-size: 3.4vh;
+  lines: 1;
+  margin-right: 1vw;
+}
+.errbox {
+  position: absolute;
+  left: 4vw;
+  top: 30vh;
+  width: 60vw;
+}
+.errtext {
+  color: #ff6b72;
+  font-size: 4.4vh;
+  line-height: 6.5vh;
 }
 .btntextacc {
   color: #4fd6c3;
