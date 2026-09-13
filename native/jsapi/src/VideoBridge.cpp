@@ -445,6 +445,30 @@ static void* decodeThread(void* arg) {
     int16_t* outSamples = NULL;
     size_t outSamplesBytes = 0;
     bool opened = false;
+    int capMaxW = 0;   // JS 画质上限（首帧探测后设置）
+    int capMaxH = 0;
+
+    // 目标尺寸（降画质）与 blit 原点：可重复计算（setView 切换视频区域时重算）
+    //   可用区域 = JS 传入的视频矩形 rectW×rectH（逻辑横屏坐标），缺省全屏 800×254
+    //   取「原始尺寸、画质上限、可用区域」三者最小并等比缩放，不放大，区域内居中。
+    auto recomputeTarget = [&]() {
+        const int availW = (s.rectW > 0 && s.rectW <= 800) ? s.rectW : 800;
+        const int availH = (s.rectH > 0 && s.rectH <= 254) ? s.rectH : 254;
+        const int capW = capMaxW > 0 ? capMaxW : s.videoW;
+        const int capH = capMaxH > 0 ? capMaxH : s.videoH;
+        int tw = s.videoW > 0 ? s.videoW : capW;
+        int th = s.videoH > 0 ? s.videoH : capH;
+        if (capW > 0 && capW < tw) { th = th * capW / tw; tw = capW; }
+        if (capH > 0 && capH < th) { tw = tw * capH / th; th = capH; }
+        if (tw > availW) { th = th * availW / tw; tw = availW; }
+        if (th > availH) { tw = tw * availH / th; th = availH; }
+        if (tw % 2) tw--;
+        if (th % 2) th--;
+        s.targetW = tw > 0 ? tw : 0;
+        s.targetH = th > 0 ? th : 0;
+        s.blitX = s.rectLX + (availW - s.targetW) / 2;
+        s.blitY = s.rectLY + (availH - s.targetH) / 2;
+    };
 
     // ---- 打开 ----
     if (g_libs.avformat_open_input_(&d.fmt, s.mediaPath.c_str(), NULL, NULL) != 0) {
@@ -499,30 +523,8 @@ static void* decodeThread(void* arg) {
     d.pkt = g_libs.av_packet_alloc_();
     if (!d.frame || !d.pkt) { s.lastError = "alloc-failed"; goto done; }
 
-    // 目标尺寸（降画质）与 blit 原点：可重复计算（setView 切换视频区域时重算）
-    //   可用区域 = JS 传入的视频矩形 rectW×rectH（逻辑横屏坐标），缺省全屏 800×254
-    //   maxW/maxH 是 JS 的画质上限；最终取「原始尺寸、画质上限、可用区域」三者最小并等比缩放，
-    //   不放大；奇数尺寸下取偶数。缩放结果在可用区域内居中。
-    const int capMaxW = s.targetW;
-    const int capMaxH = s.targetH;
-    auto recomputeTarget = [&]() {
-        const int availW = (s.rectW > 0 && s.rectW <= 800) ? s.rectW : 800;
-        const int availH = (s.rectH > 0 && s.rectH <= 254) ? s.rectH : 254;
-        const int capW = capMaxW > 0 ? capMaxW : s.videoW;
-        const int capH = capMaxH > 0 ? capMaxH : s.videoH;
-        int tw = s.videoW > 0 ? s.videoW : capW;
-        int th = s.videoH > 0 ? s.videoH : capH;
-        if (capW > 0 && capW < tw) { th = th * capW / tw; tw = capW; }
-        if (capH > 0 && capH < th) { tw = tw * capH / th; th = capH; }
-        if (tw > availW) { th = th * availW / tw; tw = availW; }
-        if (th > availH) { tw = tw * availH / th; th = availH; }
-        if (tw % 2) tw--;
-        if (th % 2) th--;
-        s.targetW = tw > 0 ? tw : 0;
-        s.targetH = th > 0 ? th : 0;
-        s.blitX = s.rectLX + (availW - s.targetW) / 2;
-        s.blitY = s.rectLY + (availH - s.targetH) / 2;
-    };
+    capMaxW = s.targetW;
+    capMaxH = s.targetH;
     recomputeTarget();
     if (d.vStream >= 0 && s.targetW > 0 && s.targetH > 0) {
         scaleBufSize = s.targetW * s.targetH * 4;
