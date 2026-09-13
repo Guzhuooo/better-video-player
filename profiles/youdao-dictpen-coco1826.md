@@ -55,14 +55,23 @@ validation:
     - "adb 只读探测：/usr/lib 无 gstreamer；FFmpeg 4.4 库列表齐全；libasound.so.2 存在"
     - "fb0: bits_per_pixel=32, virtual_size=256x1600, stride=1024"
     - "/etc/miniapp/resources/cfg.json 与 pen-novel-reader profile 一致（254x800, direction 270）"
-    - "/userdisk/video 下有真实 mp4 片源可测"
+    - "/userdisk/video 与 /userdisk/Favorite/一些番剧 下有真实 mp4 片源"
     - "系统播放器包内 libjsapi_mediaplayer NEEDED 含 libavcodec.so.58 —— 官方同款解码栈"
+    - "本应用 AMR 真机 install + start 成功；miniapp_cli capture 确认首页渲染正常（标题/找视频按钮/空态提示）"
+    - "CI（ubuntu）交叉编译 libjsapi_better_video.so 通过 ELF 校验：NEEDED 仅 libdl/libpthread/libstdc++/libm/libgcc_s/libc（FFmpeg/ALSA 运行时 dlopen）"
+    - "release 工作流 x5 机型 AMR 构建成功（dist/releases/better-video-1.0.0-x5.amr）"
   unverified:
-    - "fb0 直写与运行时 UI 的合成效果（需真机安装后 captureFB 对拍）"
+    - "视频解码→fb0 直写画面（含 270° 旋转方向）——待真机播放确认"
     - "ALSA default PCM 与系统 SoundPlayer 并发占用"
+    - "进度条 seek / 倍速（swr 重采样）/ 音量软增益的真机表现"
     - "720p/1080p 软解实测帧率"
     - "其他机型（a6p/p5/x7/s6p）的 FFmpeg/fb0 布局"
+  quirks:
+    - "captureFB 常返回旧缓冲（书阁 profile 已记录），验证一律用 miniapp_cli capture"
+    - "覆盖安装后旧实例可能仍在跑，需要 uninstall + install + start 才能换新版本"
   constraints:
-    - "禁止 adb 触发任何声音输出（用户明确要求）"
+    - "禁止 adb 触发任何声音输出（用户明确要求）：验证播放时把软件音量设为 0（增益 0 = 静音）"
     - "adb 卡住的 shell 抓键进程（/dev/input/event4）不要杀"
+  blocker:
+    - "2026-09-04 起 adb shell 返回 'login with \"adb shell auth\" to continue'，需人工执行一次 adb shell auth 才能继续真机验证"
 ```

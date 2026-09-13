@@ -58,17 +58,39 @@ native/jsapi/src/VideoBridge.cpp ← FFmpeg(4.4) 解码 + libswscale 缩放
 
 ## 多机型构建（GitHub Actions）
 
-`tools/build-all-releases.sh`（配合 `.github/workflows/release.yml`）为每种笔编译
-对应的 `libjsapi_better_video.so` 并打包成机型专属 AMR：
+仓库：<https://github.com/Guzhuooo/better-video-player>
 
-| 机型 | ABI | 原生模块 |
-|---|---|---|
-| X5 / S6 Pro | armv7 glibc | better_video(fs+video) + langningchen(custom.scan) |
-| A6 Pro | armv7 uclibc | better_video(fs+video) |
-| P5 / X7 | aarch64 glibc | better_video(fs+video) |
+两个工作流：
 
-> 注意：其他机型的固件是否带 FFmpeg 4.4 / fb0 布局是否一致**尚未验证**；
-> 打 tag 发布前请按 profile 先在真机核对 `/usr/lib` 库列表。
+- **build-amr**（push / PR）：单测 → 交叉编译 armv7-glibc 原生模块（编译门禁）→ 打包 AMR。
+  ✅ 当前全绿（含原生模块编译）。
+- **release**（tag 或手动）：`tools/build-all-releases.sh` 逐机型编译并打包
+  `dist/releases/better-video-<版本>-<机型>.amr`。
+  当前默认只做 **x5**（用户指定），其余机型留待后续：
+
+| 机型 | ABI | 原生模块 | 状态 |
+|---|---|---|---|
+| X5 / S6 Pro | armv7 glibc | better_video(fs+video) + langningchen(custom.scan) | ✅ CI 构建通过 |
+| A6 Pro | armv7 uclibc | better_video(fs+video) | 待构建/验证 |
+| P5 / X7 | aarch64 glibc | better_video(fs+video) | 待构建/验证 |
+
+x5 原生模块的 ELF 检查结果：`NEEDED: libdl libpthread libstdc++ libm libgcc_s libc`——
+FFmpeg/ALSA 全部 dlopen，不引入额外链接依赖，因此同一个 `.so` 在带 FFmpeg 的固件上即可用。
+
+## 真机验证状态（CoCo-1826 / X5）
+
+已验证：
+
+- 交叉编译产物在真机 `miniapp_cli install/start` 成功，首页（标题 / 找视频按钮 / 空态提示）
+  通过 `miniapp_cli capture` 截屏确认渲染正常
+- 原生模块经 CI 交叉编译通过 ELF 校验（只依赖基础库，FFmpeg/ALSA 运行时 dlopen）
+
+待验证（**卡在 ADB 认证**：当前 `adb shell` 返回 `login with "adb shell auth" to continue`，
+需要人工在电脑上执行一次 `adb shell auth` 完成认证）：
+
+- 视频解码/显示链路（fb0 直写画面、270° 旋转方向）
+- ALSA 出声、进度条 seek、倍速、音量
+- `captureFB` 在本机存在取旧缓冲的问题，验证一律用 `miniapp_cli capture`
 
 ## 本地开发
 
