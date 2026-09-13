@@ -40,9 +40,14 @@ export async function play(opt) {
       path: String(opt.path || ''),
       screenW: num(opt.screenW, 800),
       screenH: num(opt.screenH, 254),
+      rectX: num(opt.rectX, 0),
+      rectY: num(opt.rectY, 0),
+      rectW: num(opt.rectW, 800),
+      rectH: num(opt.rectH, 192),
       maxW: num(opt.maxW, 0),
       maxH: num(opt.maxH, 0),
-      rate: num(opt.rate, 1),
+      // native 契约：ratePermillage（1000 = 1.0x）
+      ratePermillage: Math.round(num(opt.rate, 1) * 1000),
       volume: num(opt.volume, 70),
     })
     return r && typeof r === 'object' ? r : { ok: !!r }
