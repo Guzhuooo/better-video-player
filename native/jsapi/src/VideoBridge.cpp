@@ -335,7 +335,8 @@ struct Session {
     int64_t durationMs;
 
     FbWriter fb;
-    int rectLX, rectLY, rectW, rectH;
+    int rectLX, rectLY, rectW, rectH;   // JS 指定的视频区域（逻辑横屏坐标）
+    int blitX, blitY;                   // 实际 blit 原点（区域内居中后）
 
     pthread_t thread;
     bool threadStarted;
@@ -343,6 +344,7 @@ struct Session {
     pthread_mutex_t mutex;
     volatile bool seekPending;
     volatile int64_t seekTargetMs;
+    volatile bool viewDirty;   // setView 后需要重算缩放与 blit 区域
 
     double basePosMs;      // 时钟基准（seek 目标 / 0）
     double contentPosMs;   // 内容时间（UI 进度，倍速后）
@@ -352,8 +354,8 @@ struct Session {
     Session()
         : active(false), paused(false), eos(false), stopFlag(false),
           ratePermillage(1000), volume(70), videoW(0), videoH(0), targetW(0), targetH(0),
-          durationMs(0), rectLX(0), rectLY(0), rectW(0), rectH(0), threadStarted(false),
-          seekPending(false), seekTargetMs(0), basePosMs(0), contentPosMs(0), wallBaseMs(0), clockByAudio(false) {
+          durationMs(0), rectLX(0), rectLY(0), rectW(0), rectH(0), blitX(0), blitY(0), threadStarted(false),
+          seekPending(false), seekTargetMs(0), viewDirty(false), basePosMs(0), contentPosMs(0), wallBaseMs(0), clockByAudio(false) {
         pthread_mutex_init(&mutex, NULL);
     }
 
@@ -497,17 +499,17 @@ static void* decodeThread(void* arg) {
     d.pkt = g_libs.av_packet_alloc_();
     if (!d.frame || !d.pkt) { s.lastError = "alloc-failed"; goto done; }
 
-    // 目标尺寸（降画质）：
-    //   可用区域 = JS 传入的视频矩形 rectW×rectH（逻辑横屏坐标），缺省 800×192
+    // 目标尺寸（降画质）与 blit 原点：可重复计算（setView 切换视频区域时重算）
+    //   可用区域 = JS 传入的视频矩形 rectW×rectH（逻辑横屏坐标），缺省全屏 800×254
     //   maxW/maxH 是 JS 的画质上限；最终取「原始尺寸、画质上限、可用区域」三者最小并等比缩放，
     //   不放大；奇数尺寸下取偶数。缩放结果在可用区域内居中。
-    {
-        int availW = s.rectW > 0 ? s.rectW : 800;
-        int availH = s.rectH > 0 ? s.rectH : 192;
-        if (availW > 800) availW = 800;
-        if (availH > 254) availH = 254;
-        const int capW = s.targetW > 0 ? s.targetW : s.videoW;
-        const int capH = s.targetH > 0 ? s.targetH : s.videoH;
+    const int capMaxW = s.targetW;
+    const int capMaxH = s.targetH;
+    auto recomputeTarget = [&]() {
+        const int availW = (s.rectW > 0 && s.rectW <= 800) ? s.rectW : 800;
+        const int availH = (s.rectH > 0 && s.rectH <= 254) ? s.rectH : 254;
+        const int capW = capMaxW > 0 ? capMaxW : s.videoW;
+        const int capH = capMaxH > 0 ? capMaxH : s.videoH;
         int tw = s.videoW > 0 ? s.videoW : capW;
         int th = s.videoH > 0 ? s.videoH : capH;
         if (capW > 0 && capW < tw) { th = th * capW / tw; tw = capW; }
@@ -518,9 +520,10 @@ static void* decodeThread(void* arg) {
         if (th % 2) th--;
         s.targetW = tw > 0 ? tw : 0;
         s.targetH = th > 0 ? th : 0;
-        s.rectLX += (availW - s.targetW) / 2;
-        s.rectLY += (availH - s.targetH) / 2;
-    }
+        s.blitX = s.rectLX + (availW - s.targetW) / 2;
+        s.blitY = s.rectLY + (availH - s.targetH) / 2;
+    };
+    recomputeTarget();
     if (d.vStream >= 0 && s.targetW > 0 && s.targetH > 0) {
         scaleBufSize = s.targetW * s.targetH * 4;
         scaleBuf = (uint8_t*)malloc((size_t)scaleBufSize);
@@ -545,6 +548,8 @@ static void* decodeThread(void* arg) {
         double pendingPtsMs = -1;
         bool sentVFlush = false, sentAFlush = false;
         int64_t playedSrcSamples = 0;   // 已送入 swr 的源采样数（进度推算用）
+        bool frameReady = false;        // 缩放缓冲里已有可重绘的帧
+        double lastBlitMs = 0;
 
         while (!s.stopFlag) {
             // seek
@@ -567,7 +572,24 @@ static void* decodeThread(void* arg) {
                 playedSrcSamples = 0;
             }
 
+            if (s.viewDirty) {
+                s.viewDirty = false;
+                recomputeTarget();
+                if (d.sws) { g_libs.sws_freeContext_(d.sws); d.sws = NULL; }
+                if (scaleBuf && s.targetW > 0 && s.targetH > 0 &&
+                    s.targetW * s.targetH * 4 != scaleBufSize) {
+                    free(scaleBuf);
+                    scaleBufSize = s.targetW * s.targetH * 4;
+                    scaleBuf = (uint8_t*)malloc((size_t)scaleBufSize);
+                }
+                frameReady = false;
+            }
+
             if (s.paused) {
+                if (frameReady && s.fb.valid && s.targetW > 0 && s.nowMs() - lastBlitMs > 400) {
+                    s.fb.blitLandscape(scaleBuf, s.targetW, s.blitX, s.blitY, s.targetW, s.targetH);
+                    lastBlitMs = s.nowMs();
+                }
                 s.wallBaseMs = s.nowMs();  // 冻结墙钟
                 usleep(20000);
                 continue;
@@ -721,14 +743,21 @@ static void* decodeThread(void* arg) {
                     s.contentPosMs = clock;
                 }
                 if (pendingPtsMs <= clock + 20.0) {
-                    if (s.fb.valid && s.rectW > 0 && s.rectH > 0) {
-                        s.fb.blitLandscape(scaleBuf, s.targetW, s.rectLX, s.rectLY, s.targetW, s.targetH);
+                    if (s.fb.valid && s.targetW > 0 && s.targetH > 0) {
+                        s.fb.blitLandscape(scaleBuf, s.targetW, s.blitX, s.blitY, s.targetW, s.targetH);
+                        frameReady = true;
+                        lastBlitMs = s.nowMs();
                     }
                     hasPendingVideo = false;
                 } else {
                     usleep(3000);
                 }
             } else if (!fedPacket) {
+                if (frameReady && s.fb.valid && s.targetW > 0 && s.nowMs() - lastBlitMs > 250) {
+                    // UI 重绘可能把视频区刷黑，周期性重绘上一帧兜底
+                    s.fb.blitLandscape(scaleBuf, s.targetW, s.blitX, s.blitY, s.targetW, s.targetH);
+                    lastBlitMs = s.nowMs();
+                }
                 if ((videoEof || d.vStream < 0) && (audioEof || d.aStream < 0)) {
                     if (!s.eos) s.eos = true;
                     usleep(50000);
@@ -928,6 +957,21 @@ JSValue videoSetRate(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
     return retOk(ctx);
 }
 
+JSValue videoSetView(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
+    Session* s = sessionRef();
+    if (!s) return retErr(ctx, "not-playing");
+    if (argc < 1 || !JS_IsObject(argv[0])) return retErr(ctx, "bad-args");
+    JSValueConst o = argv[0];
+    s->rectLX = getIntArg(ctx, o, "rectX", s->rectLX);
+    s->rectLY = getIntArg(ctx, o, "rectY", s->rectLY);
+    const int w = getIntArg(ctx, o, "rectW", s->rectW);
+    const int h = getIntArg(ctx, o, "rectH", s->rectH);
+    if (w > 0) s->rectW = w;
+    if (h > 0) s->rectH = h;
+    s->viewDirty = true;
+    return retOk(ctx);
+}
+
 JSValue videoSetVolume(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv) {
     Session* s = sessionRef();
     if (!s) return retErr(ctx, "not-playing");
@@ -991,6 +1035,7 @@ int videoModuleInit(JSContext* ctx, JSModuleDef* m) {
     JS_SetPropertyStr(ctx, v, "seek", JS_NewCFunction(ctx, videoSeek, "seek", 1));
     JS_SetPropertyStr(ctx, v, "setRate", JS_NewCFunction(ctx, videoSetRate, "setRate", 1));
     JS_SetPropertyStr(ctx, v, "setVolume", JS_NewCFunction(ctx, videoSetVolume, "setVolume", 1));
+    JS_SetPropertyStr(ctx, v, "setView", JS_NewCFunction(ctx, videoSetView, "setView", 1));
     JS_SetPropertyStr(ctx, v, "getPosition", JS_NewCFunction(ctx, videoGetPosition, "getPosition", 0));
     JS_SetPropertyStr(ctx, v, "getDuration", JS_NewCFunction(ctx, videoGetDuration, "getDuration", 0));
     JS_SetPropertyStr(ctx, v, "getStatus", JS_NewCFunction(ctx, videoGetStatus, "getStatus", 0));

@@ -1,14 +1,17 @@
 <template>
   <div class="screen">
-    <!-- 视频区：原生模块按 (0,0,800,192) 直写屏幕，这里只放透明点击层 -->
-    <div class="videoarea" @click="togglePlay">
+    <!-- 视频区：原生模块直写屏幕。点按唤出/收起控制栏 -->
+    <div class="videoarea" @click="toggleControls">
       <div class="errbox" v-if="errorText">
         <text class="errtext">{{ errorText }}</text>
       </div>
+      <div class="hintbox" v-if="showHint">
+        <text class="hinttext">点按画面唤出控制</text>
+      </div>
     </div>
 
-    <!-- 控制条（视频区之外，避免被视频帧覆盖） -->
-    <div class="controls">
+    <!-- 控制栏：默认隐藏，点按视频唤出；唤出时视频区收缩到其上方，互不遮挡 -->
+    <div class="controls" v-if="controlsVisible">
       <div class="row1">
         <text class="time">{{ fmtTime(positionMs) }}</text>
         <slider class="seekbar" :min="0" :max="seekMax" :step="1" v-model="seekVal"
@@ -21,16 +24,14 @@
         <div class="btn press" @click="seekBy(-30)"><text class="btntext">-30s</text></div>
         <div class="btn press" @click="seekBy(30)"><text class="btntext">+30s</text></div>
         <div class="btn accent press" @click="cycleRate"><text class="btntextacc">{{ rateLabel }}</text></div>
-        <text class="qtag" v-if="qualityLabel">{{ qualityLabel }}</text>
         <div class="volbox">
           <text class="volicon">音</text>
           <slider class="volbar" :min="0" :max="100" :step="5" v-model="volume"
             active-color="#f5b85c" background-color="#263340" @change="onVolumeChange"></slider>
           <text class="voltext">{{ volume }}</text>
         </div>
+        <text class="qtag" v-if="qualityLabel">{{ qualityLabel }}</text>
         <div class="btn back press" @click="goBack"><text class="btntext">返回</text></div>
-        <!-- TEMP TEST HOOK: 调试状态（验证后移除） -->
-        <text class="qtag">DBG v{{ volume }}/{{ Math.round(durationMs) }}/{{ (errorText || 'ok').slice(0, 8) }}/p:{{ (path || 'EMPTY').slice(-14) }}</text>
       </div>
     </div>
 
@@ -45,6 +46,9 @@ import history from '../../utils/history.js'
 import device from '../../utils/device.js'
 import { fmtTime } from '../../utils/fmt.js'
 import appToast from '../../components/app-toast.vue'
+
+const FULL = { rectX: 0, rectY: 0, rectW: 800, rectH: 254 }   // 控制栏隐藏：全屏视频
+const WITHBAR = { rectX: 0, rectY: 0, rectW: 800, rectH: 192 } // 控制栏唤出：视频收缩到上方
 
 export default {
   components: { 'app-toast': appToast },
@@ -63,7 +67,9 @@ export default {
       volume: 70,
       screen: { w: 800, h: 254 },
       qualityLabel: '',
-      errorText: ''
+      errorText: '',
+      controlsVisible: false,
+      showHint: true
     }
   },
   computed: {
@@ -83,12 +89,22 @@ export default {
     goBack() {
       this.$page.finish()
     },
-    // 播放入口：先按屏幕尺寸决定是否降画质，再交给原生模块
+    // 点按视频区：唤出/收起控制栏，并同步收缩视频区域（避免遮挡）
+    toggleControls() {
+      this.controlsVisible = !this.controlsVisible
+      this.showHint = false
+      bridge.setView(this.controlsVisible ? WITHBAR : FULL)
+      if (this.controlsVisible) this.syncProgress()
+    },
     async start(path, resumeMs) {
       const r = await bridge.play({
         path,
         screenW: this.screen.w,
         screenH: this.screen.h,
+        rectX: FULL.rectX,
+        rectY: FULL.rectY,
+        rectW: FULL.rectW,
+        rectH: FULL.rectH,
         maxW: this.screen.w,
         maxH: this.screen.h,
         rate: this.rate,
@@ -102,7 +118,6 @@ export default {
       }
       this.errorText = ''
       this.playing = true
-      this.ended = false
       if (r.durationMs > 0) this.durationMs = r.durationMs
       const q = quality.decideQuality({
         videoW: r.videoW, videoH: r.videoH,
@@ -114,6 +129,7 @@ export default {
       if (resumeMs > 3000) {
         await bridge.seek(resumeMs)
         this.positionMs = resumeMs
+        this.syncProgress()
       }
     },
     togglePlay() {
@@ -134,9 +150,9 @@ export default {
     },
     seekBy(sec) {
       const target = Math.max(0, this.positionMs + sec * 1000)
-      this.seekVal = this.durationMs > 0 ? Math.round(target / this.durationMs * this.seekMax) : 0
       bridge.seek(target)
       this.positionMs = target
+      this.syncProgress()
     },
     onSeekMoving(val) {
       this.scrubbing = true
@@ -162,23 +178,27 @@ export default {
       this.volume = val
       await bridge.setVolume(val)
     },
-    // 500ms 轮询：进度 + 状态
+    syncProgress() {
+      if (this.scrubbing || this.durationMs <= 0) return
+      this.seekVal = Math.min(this.seekMax, Math.round(this.positionMs / this.durationMs * this.seekMax))
+    },
+    // 500ms 轮询：进度 + 状态（控制栏隐藏时不刷新 UI，避免运行时重绘覆盖视频）
     async tick() {
       if (!this.path) return
       const pos = await bridge.position()
       const st = await bridge.status()
-      if (st && st.durationMs > 0) this.durationMs = st.durationMs
-      if (!this.scrubbing && this.durationMs > 0) {
-        this.seekVal = Math.min(this.seekMax, Math.round(pos / this.durationMs * this.seekMax))
-      }
       this.positionMs = pos
+      if (st && st.durationMs > 0) this.durationMs = st.durationMs
       if (st && st.ok) {
         this.playing = st.playing
         if (st.eos) {
           this.ended = true
           this.playing = false
+          this.controlsVisible = true
+          bridge.setView(WITHBAR)
         }
       }
+      if (this.controlsVisible) this.syncProgress()
       this._tickCount = (this._tickCount || 0) + 1
       if (this._tickCount % 6 === 0) {
         history.saveProgress(this.path, pos, this.durationMs).catch(() => {})
@@ -194,7 +214,6 @@ export default {
     try {
       this.screen = await device.detectScreen()
     } catch (e) { /* 探测失败用默认 800x254 */ }
-    // 断点续播
     let resumeMs = 0
     try {
       const hist = await history.load()
@@ -211,7 +230,8 @@ export default {
     } catch (e) {
       this.errorText = '播放启动异常\n' + e
     }
-    this._pollTimer = this.setInterval(() => { this.tick().catch(() => {}) }, 500)
+    this._pollTimer = setInterval(() => { this.tick().catch(() => {}) }, 500)
+    this._hintTimer = setTimeout(() => { this.showHint = false }, 4000)
   },
   async onHide() {
     bridge.pause()
@@ -221,7 +241,8 @@ export default {
   async onUnload() {
     bridge.stop()
     this.playing = false
-    if (this._pollTimer) this.clearInterval(this._pollTimer)
+    if (this._pollTimer) clearInterval(this._pollTimer)
+    if (this._hintTimer) clearTimeout(this._hintTimer)
     if (this.path) {
       try {
         await history.record({ path: this.path, name: this.name, positionMs: this.positionMs, durationMs: this.durationMs, rate: this.rate, volume: this.volume })
@@ -243,14 +264,14 @@ export default {
   left: 0vw;
   top: 0vh;
   width: 100vw;
-  height: 75.59vh; /* 192px：控制条之外的区域，原生视频直写 */
+  height: 100vh;
 }
 .controls {
   position: absolute;
   left: 0vw;
   top: 75.59vh;
   width: 100vw;
-  height: 24.41vh; /* 62px */
+  height: 24.41vh; /* 62px，视频区收缩到其上方 */
   background-color: #121922;
 }
 .row1 {
@@ -298,26 +319,15 @@ export default {
   color: #e8eef2;
   font-size: 4.4vh;
 }
+.btntextacc {
+  color: #4fd6c3;
+  font-size: 4.4vh;
+}
 .qtag {
   color: #8ca0ad;
   font-size: 3.4vh;
   lines: 1;
   margin-right: 1vw;
-}
-.errbox {
-  position: absolute;
-  left: 4vw;
-  top: 30vh;
-  width: 60vw;
-}
-.errtext {
-  color: #ff6b72;
-  font-size: 4.4vh;
-  line-height: 6.5vh;
-}
-.btntextacc {
-  color: #4fd6c3;
-  font-size: 4.4vh;
 }
 .volbox {
   display: flex;
@@ -339,5 +349,27 @@ export default {
   font-size: 3.8vh;
   width: 5vw;
   text-align: right;
+}
+.errbox {
+  position: absolute;
+  left: 4vw;
+  top: 30vh;
+  width: 60vw;
+}
+.errtext {
+  color: #ff6b72;
+  font-size: 4.4vh;
+  line-height: 6.5vh;
+}
+.hintbox {
+  position: absolute;
+  left: 30vw;
+  top: 80vh;
+  width: 40vw;
+}
+.hinttext {
+  color: #8ca0ad;
+  font-size: 4vh;
+  text-align: center;
 }
 </style>

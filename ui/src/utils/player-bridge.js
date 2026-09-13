@@ -68,6 +68,14 @@ export async function simple(name, arg) {
   }
 }
 
+// 切换视频显示区域（控制栏唤出时收缩视频，避免遮挡）
+export const setView = opt => simple('setView', {
+  rectX: num(opt && opt.rectX, 0),
+  rectY: num(opt && opt.rectY, 0),
+  rectW: num(opt && opt.rectW, 800),
+  rectH: num(opt && opt.rectH, 254),
+})
+
 export const pause = () => simple('pause')
 export const resume = () => simple('resume')
 export const stop = () => simple('stop')
@@ -96,4 +104,4 @@ export async function status() {
   }
 }
 
-export default { available, play, pause, resume, stop, seek, setRate, setVolume, position, duration, status }
+export default { available, play, pause, resume, stop, seek, setRate, setVolume, setView, position, duration, status }
