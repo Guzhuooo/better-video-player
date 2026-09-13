@@ -497,19 +497,29 @@ static void* decodeThread(void* arg) {
     d.pkt = g_libs.av_packet_alloc_();
     if (!d.frame || !d.pkt) { s.lastError = "alloc-failed"; goto done; }
 
-    // 目标尺寸（降画质）：JS 传入 maxW/maxH；不超限时保持原始
+    // 目标尺寸（降画质）：
+    //   可用区域 = JS 传入的视频矩形 rectW×rectH（逻辑横屏坐标），缺省 800×192
+    //   maxW/maxH 是 JS 的画质上限；最终取「原始尺寸、画质上限、可用区域」三者最小并等比缩放，
+    //   不放大；奇数尺寸下取偶数。缩放结果在可用区域内居中。
     {
-        int tw = s.targetW > 0 ? s.targetW : s.videoW;
-        int th = s.targetH > 0 ? s.targetH : s.videoH;
-        if (s.videoW > 0 && s.videoH > 0) {
-            if (tw > s.videoW || th > s.videoH) { tw = s.videoW; th = s.videoH; }  // 不放大
-        }
-        if (tw > 800) { th = th * 800 / tw; tw = 800; }
-        if (th > 254) { tw = tw * 254 / th; th = 254; }
+        int availW = s.rectW > 0 ? s.rectW : 800;
+        int availH = s.rectH > 0 ? s.rectH : 192;
+        if (availW > 800) availW = 800;
+        if (availH > 254) availH = 254;
+        const int capW = s.targetW > 0 ? s.targetW : s.videoW;
+        const int capH = s.targetH > 0 ? s.targetH : s.videoH;
+        int tw = s.videoW > 0 ? s.videoW : capW;
+        int th = s.videoH > 0 ? s.videoH : capH;
+        if (capW > 0 && capW < tw) { th = th * capW / tw; tw = capW; }
+        if (capH > 0 && capH < th) { tw = tw * capH / th; th = capH; }
+        if (tw > availW) { th = th * availW / tw; tw = availW; }
+        if (th > availH) { tw = tw * availH / th; th = availH; }
         if (tw % 2) tw--;
         if (th % 2) th--;
         s.targetW = tw > 0 ? tw : 0;
         s.targetH = th > 0 ? th : 0;
+        s.rectLX += (availW - s.targetW) / 2;
+        s.rectLY += (availH - s.targetH) / 2;
     }
     if (d.vStream >= 0 && s.targetW > 0 && s.targetH > 0) {
         scaleBufSize = s.targetW * s.targetH * 4;
