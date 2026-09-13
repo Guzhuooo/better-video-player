@@ -3,10 +3,11 @@
 
 export const VIDEO_EXTS = ['mp4', 'mkv', 'avi', 'mov', 'm4v', '3gp', 'webm', 'ts', 'flv', 'mpg', 'mpeg', 'wmv']
 
-// 系统目录与巨型媒体目录，扫描时跳过
+// 系统目录与巨型媒体目录，扫描时跳过。
+// 注意：不要跳过 Favorite —— 真机上用户的视频就放在 /userdisk/Favorite/ 下。
 export const SKIP_DIRS = ['miniapp', 'lost+found', 'pstore', 'database', 'corefile', 'swap',
   'record', 'Music', 'Pictures', 'browser', 'mcserver', 'tailscale',
-  'cloudbrowser-update', 'adb_persist', 'uresource', 'opt', 'Favorite', '.git']
+  'cloudbrowser-update', 'adb_persist', 'uresource', 'opt', '.git']
 
 export function extOf(name) {
   const s = String(name || '')

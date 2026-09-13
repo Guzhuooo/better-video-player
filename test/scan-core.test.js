@@ -39,9 +39,13 @@ test('scanVideos 递归扫描 + 跳过系统目录 + 深度限制', async () => 
   const tree = {
     '/userdisk': [
       { name: 'video', isDir: true },
-      { name: 'Favorite', isDir: true },     // SKIP_DIRS
+      { name: 'Favorite', isDir: true },
+      { name: 'miniapp', isDir: true },      // SKIP_DIRS
       { name: 'notes.txt', isDir: false },
       { name: 'movie.mp4', isDir: false },
+    ],
+    '/userdisk/miniapp': [
+      { name: 'hidden.mp4', isDir: false },
     ],
     '/userdisk/video': [
       { name: 'sub', isDir: true },
@@ -63,10 +67,12 @@ test('scanVideos 递归扫描 + 跳过系统目录 + 深度限制', async () => 
   assert.ok(paths.includes('/userdisk/movie.mp4'))
   assert.ok(paths.includes('/userdisk/video/a.mkv'))
   assert.ok(paths.includes('/userdisk/video/sub/deep.avi'))
-  assert.ok(!paths.some(p => p.includes('Favorite')))
+  // Favorite 是用户的视频目录，必须扫到
+  assert.ok(paths.includes('/userdisk/Favorite/x.mp4'))
+  assert.ok(!paths.some(p => p.includes('miniapp')))
   assert.ok(!paths.some(p => p.includes('.hidden')))
   // 一级文件夹（不含跳过目录）
-  assert.deepEqual(r.folders, ['/userdisk/video'])
+  assert.deepEqual(r.folders, ['/userdisk/video', '/userdisk/Favorite'])
 })
 
 test('scanVideos maxFound 截断', async () => {

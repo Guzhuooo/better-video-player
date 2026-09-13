@@ -100,8 +100,9 @@ export default {
       $falcon.navTo('player', { path: v.path, name: v.name })
     }
   },
-  async onLoad(options) {
-    const o = options || {}
+  // 本运行时不调用页面根组件的 onLoad：导航参数从 this.$page.options 取
+  async mounted() {
+    const o = (this.$page && this.$page.options) || {}
     this._scanGen = 0
     await this.enter(String(o.path || ROOT))
   }

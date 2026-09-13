@@ -32,11 +32,11 @@ jobs:
       - name: Run unit tests
         run: pnpm test
 
-      - name: Compile native module (armv7-glibc, syntax gate)
+      - name: Compile native module (armv7-glibc) and install into ui/libs
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq g++-arm-linux-gnueabihf
           chmod +x tools/build-native.sh
-          tools/build-native.sh --prefix arm-linux-gnueabihf- --abi armv7-glibc
+          tools/build-native.sh --prefix arm-linux-gnueabihf- --abi armv7-glibc --install
 
       - name: Build AMR
         run: pnpm -C ui package

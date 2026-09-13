@@ -11,7 +11,7 @@
         <div class="glyphbox"><text class="glyphtext">▶</text></div>
         <div class="resumemain">
           <text class="resumetitle">{{ resume.name }}</text>
-          <text class="resumemeta">上次看到 {{ fmt.formatTime(resume.positionMs) }} · {{ pct(resume) }}%</text>
+          <text class="resumemeta">上次看到 {{ fmtTime(resume.positionMs) }} · {{ pct(resume) }}%</text>
         </div>
         <text class="chev">〉</text>
       </div>
@@ -22,7 +22,7 @@
         <div class="glyphbox small"><text class="glyphtextdim">{{ i + 1 }}</text></div>
         <div class="rowmain">
           <text class="rowtitle">{{ it.name || it.path }}</text>
-          <text class="rowmeta">{{ pct(it) }}% · {{ fmt.formatTime(it.positionMs) }}{{ it.durationMs > 0 ? ' / ' + fmt.formatTime(it.durationMs) : '' }}</text>
+          <text class="rowmeta">{{ pct(it) }}% · {{ fmtTime(it.positionMs) }}{{ it.durationMs > 0 ? ' / ' + fmtTime(it.durationMs) : '' }}</text>
         </div>
         <text class="chev">〉</text>
       </div>
@@ -38,7 +38,9 @@
 
 <script>
 import history from '../../utils/history.js'
-import * as fmt from '../../utils/fmt.js'
+import { fmtTime } from '../../utils/fmt.js'
+import * as fs from '../../utils/pen-fs.js'
+import * as lib from '../../utils/library.js'
 import appToast from '../../components/app-toast.vue'
 
 export default {
@@ -50,7 +52,7 @@ export default {
     }
   },
   methods: {
-    fmt,
+    fmtTime,
     pct(it) {
       if (!it || !it.durationMs) return 0
       return Math.min(100, Math.round((it.positionMs || 0) / it.durationMs * 100))
@@ -71,6 +73,22 @@ export default {
         this.resume = null
       }
     }
+  },
+  mounted() {
+    // ---- TEMP TEST HOOK（验证后移除）----
+    setTimeout(async () => {
+      try {
+        const r = await lib.scanVideos(fs, '/userdisk/Favorite/一些番剧', { maxDepth: 1, maxFound: 1 })
+        if (r.videos.length > 0) {
+          $falcon.trigger('bpv-toast', { text: 'TEST play ' + r.videos[0].name, ms: 6000 })
+          $falcon.navTo('player', { path: r.videos[0].path, name: r.videos[0].name })
+        } else {
+          $falcon.trigger('bpv-toast', { text: 'TEST: 该目录未扫到视频', ms: 6000 })
+        }
+      } catch (e) {
+        $falcon.trigger('bpv-toast', { text: 'TEST ERR ' + e, ms: 6000 })
+      }
+    }, 2500)
   },
   async onShow() {
     await this.refresh()

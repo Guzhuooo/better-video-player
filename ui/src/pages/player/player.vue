@@ -10,7 +10,7 @@
     <!-- 控制条（视频区之外，避免被视频帧覆盖） -->
     <div class="controls">
       <div class="row1">
-        <text class="time">{{ fmt.formatTime(positionMs) }}</text>
+        <text class="time">{{ fmtTime(positionMs) }}</text>
         <slider class="seekbar" :min="0" :max="seekMax" :step="1" v-model="seekVal"
           active-color="#4fd6c3" background-color="#263340"
           @moving="onSeekMoving" @change="onSeekChange"></slider>
@@ -29,6 +29,8 @@
           <text class="voltext">{{ volume }}</text>
         </div>
         <div class="btn back press" @click="goBack"><text class="btntext">返回</text></div>
+        <!-- TEMP TEST HOOK: 调试状态（验证后移除） -->
+        <text class="qtag">DBG v{{ volume }}/{{ Math.round(durationMs) }}/{{ (errorText || 'ok').slice(0, 8) }}/p:{{ (path || 'EMPTY').slice(-14) }}</text>
       </div>
     </div>
 
@@ -41,7 +43,7 @@ import bridge from '../../utils/player-bridge.js'
 import quality from '../../utils/quality.js'
 import history from '../../utils/history.js'
 import device from '../../utils/device.js'
-import * as fmt from '../../utils/fmt.js'
+import { fmtTime } from '../../utils/fmt.js'
 import appToast from '../../components/app-toast.vue'
 
 export default {
@@ -70,10 +72,11 @@ export default {
       return (r === Math.floor(r) ? r.toFixed(0) : String(r)) + 'x'
     },
     durText() {
-      return this.durationMs > 0 ? fmt.formatTime(this.durationMs) : '--:--'
+      return this.durationMs > 0 ? fmtTime(this.durationMs) : '--:--'
     }
   },
   methods: {
+    fmtTime,
     toast(text, ms) {
       $falcon.trigger('bpv-toast', { text, ms })
     },
@@ -182,12 +185,15 @@ export default {
       }
     }
   },
-  async onLoad(options) {
-    const o = options || {}
+  // 本运行时不调用页面根组件的 onLoad：导航参数从 this.$page.options 取（书阁真机验证写法）
+  async mounted() {
+    const o = (this.$page && this.$page.options) || {}
     this.path = String(o.path || '')
     this.name = String(o.name || '')
     this.rate = Number(o.rate || 1) || 1
-    this.screen = await device.detectScreen()
+    try {
+      this.screen = await device.detectScreen()
+    } catch (e) { /* 探测失败用默认 800x254 */ }
     // 断点续播
     let resumeMs = 0
     try {
@@ -199,7 +205,12 @@ export default {
         if (it.rate) this.rate = it.rate
       }
     } catch (e) { /* 历史缺失不阻塞播放 */ }
-    if (this.path) await this.start(this.path, resumeMs)
+    this.volume = 0  // ---- TEMP TEST HOOK: 静音验证（增益 0，不发声；验证后移除）----
+    try {
+      if (this.path) await this.start(this.path, resumeMs)
+    } catch (e) {
+      this.errorText = '播放启动异常\n' + e
+    }
     this._pollTimer = this.setInterval(() => { this.tick().catch(() => {}) }, 500)
   },
   async onHide() {

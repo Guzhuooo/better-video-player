@@ -202,11 +202,12 @@ struct FbWriter {
     int stridePx;    // 一行像素数（含 padding，真机 256）
     int physW;       // 可见物理宽（真机 254）
     int physH;       // 可见物理高（真机 800）
+    int virtH;       // 虚拟高（双缓冲 = 2*physH）
     int landscapeW;  // 逻辑宽（真机 800）
     bool valid;
     std::string error;
 
-    FbWriter() : fd(-1), mem(NULL), memSize(0), stridePx(0), physW(0), physH(0),
+    FbWriter() : fd(-1), mem(NULL), memSize(0), stridePx(0), physW(0), physH(0), virtH(0),
                  landscapeW(800), valid(false) {}
 
     bool open() {
@@ -223,6 +224,7 @@ struct FbWriter {
         stridePx = (int)(finfo.line_length / 4);
         int virtY = (int)vinfo.yres_virtual;
         if (virtY <= 0) virtY = physH;
+        virtH = virtY;
         memSize = finfo.smem_len > 0 ? (size_t)finfo.smem_len : (size_t)stridePx * (size_t)virtY * 4;
         mem = (uint8_t*)mmap(NULL, memSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (mem == MAP_FAILED) { error = "fb-mmap-failed"; mem = NULL; ::close(fd); fd = -1; return false; }
@@ -245,19 +247,23 @@ struct FbWriter {
 
     // 逻辑横屏 BGRA 缓冲 (w x h) 写到逻辑矩形 (lx, ly, w, h)。
     // direction=270 映射：物理列 = ly + j，物理行 = (landscapeW-1) - (lx + i)。
+    // 运行时是双缓冲（yres_virtual = 2 * yres）并按 yoffset 平移，因此两个 buffer 都写，
+    // 保证运行时切缓冲后画面仍在。
     void blitLandscape(const uint8_t* src, int srcStridePx, int lx, int ly, int w, int h) {
         if (!valid || w <= 0 || h <= 0 || !src) return;
-        uint32_t* dst = visibleBase();
         const int flip = landscapeW;
-        for (int j = 0; j < h; j++) {
-            const int col = ly + j;
-            if (col < 0 || col >= physW) continue;
-            const uint32_t* srow = (const uint32_t*)(src + (size_t)j * (size_t)srcStridePx * 4);
-            uint32_t* dcol = dst + col;
-            for (int i = 0; i < w; i++) {
-                const int row = flip - 1 - (lx + i);
-                if (row < 0 || row >= physH) continue;
-                dcol[(size_t)row * (size_t)stridePx] = srow[i];
+        for (int buf = 0; buf * physH < virtH; buf++) {
+            uint32_t* dst = (uint32_t*)(mem + (size_t)buf * (size_t)physH * (size_t)stridePx * 4);
+            for (int j = 0; j < h; j++) {
+                const int col = ly + j;
+                if (col < 0 || col >= physW) continue;
+                const uint32_t* srow = (const uint32_t*)(src + (size_t)j * (size_t)srcStridePx * 4);
+                uint32_t* dcol = dst + col;
+                for (int i = 0; i < w; i++) {
+                    const int row = flip - 1 - (lx + i);
+                    if (row < 0 || row >= physH) continue;
+                    dcol[(size_t)row * (size_t)stridePx] = srow[i];
+                }
             }
         }
     }
@@ -589,8 +595,8 @@ static void* decodeThread(void* arg) {
                         if (d.frame->pts != AV_NOPTS_VALUE && d.vTimeBase.den > 0) {
                             ptsMs = (double)d.frame->pts * 1000.0 * (double)d.vTimeBase.num / (double)d.vTimeBase.den;
                         }
-                        if (d.sws && scaleBuf && s.targetW > 0 && s.targetH > 0) {
-                            // 源格式可能首帧才确定：不符则重建 sws
+                        if (scaleBuf && s.targetW > 0 && s.targetH > 0) {
+                            // 源格式首帧才确定：sws 未建或格式变化时（重）建
                             if (!d.sws || d.swsSrcFormat != d.frame->format || d.swsSrcW != s.videoW) {
                                 if (d.sws) g_libs.sws_freeContext_(d.sws);
                                 d.sws = g_libs.sws_getContext_(s.videoW, s.videoH, (AVPixelFormat)d.frame->format,
